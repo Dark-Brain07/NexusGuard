@@ -70,26 +70,38 @@ function App() {
         value: 0n,
       });
       
+      // Wait for network propagation and consensus
       try {
-        // We wait for FINALIZED, but if it times out and is stuck on ACCEPTED (2) or FINALIZED (3), we just catch and proceed.
-        await glClient.waitForTransactionReceipt({ hash: txHash, status: TransactionStatus.FINALIZED });
-      } catch (timeoutErr) {
-        console.warn("Wait timeout, proceeding to read anyway:", timeoutErr);
-        // Sleep for 3 seconds to let GenLayer catch up
-        await new Promise(r => setTimeout(r, 3000));
+        await glClient.waitForTransactionReceipt({ hash: txHash, status: TransactionStatus.ACCEPTED });
+      } catch (err) {
+        console.warn("Receipt timeout, falling back to polling...", err);
       }
       
-      // Fetch the result
-      const data = await glClient.readContract({
-        address: contractAddress as `0x${string}`,
-        functionName: 'get_audit',
-        args: [repoUrl],
-      });
+      // Robust Polling Logic: Check up to 10 times, every 4 seconds
+      let data: string | null = null;
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        
+        try {
+          const result = await glClient.readContract({
+            address: contractAddress as `0x${string}`,
+            functionName: 'get_audit',
+            args: [repoUrl],
+          });
+          
+          if (result && result !== 'NOT_FOUND') {
+            data = result as string;
+            break; // Found it! Break the loop
+          }
+        } catch (e) {
+          console.warn("Poll failed, retrying...", e);
+        }
+      }
 
-      if (data && data !== 'NOT_FOUND') {
-        setAuditResult(JSON.parse(data as string));
+      if (data) {
+        setAuditResult(JSON.parse(data));
       } else {
-        alert("Audit failed to generate or is still processing on the network. Please try again in a few seconds.");
+        alert("The AI Validators are taking longer than usual to reach consensus. The transaction is still processing on the GenLayer blockchain. Please try clicking 'AUDIT NOW' again in a minute with the same URL to check the result!");
       }
     } catch (e: any) {
       alert("Error: " + e.message);
