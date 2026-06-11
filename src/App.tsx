@@ -10,7 +10,7 @@ const glAccount = createAccount();
 const glClient = createClient({ chain: studionet, account: glAccount });
 
 function App() {
-  const [contractAddress] = useState('0x77d8ddfD50e3b4FF5f39fC83EBa1D3D6F1A447Bf');
+  const [contractAddress] = useState('0x09562d07F5937a18Dc1688951eE432Ff5ac038aF');
   const [repoUrl, setRepoUrl] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [auditResult, setAuditResult] = useState<any>(null);
