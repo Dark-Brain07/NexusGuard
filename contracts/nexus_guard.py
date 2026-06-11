@@ -18,37 +18,43 @@ class NexusGuard(gl.Contract):
         def _fetch_code() -> str:
             try:
                 response = gl.nondet.web.get(repo_url)
-                # Truncate to 1500 chars to ensure the LLM doesn't timeout on GenLayer Studionet
-                return response.body.decode("utf-8")[:1500] 
-            except Exception:
-                return "ERROR_FETCHING"
+                text = response.body.decode("utf-8")
+                return text[:1000] # Limit to 1000 characters
+            except Exception as e:
+                return "ERROR"
                 
-        raw_code = gl.eq_principle.strict_eq(_fetch_code)
+        try:
+            raw_code = gl.eq_principle.strict_eq(_fetch_code)
+        except Exception as e:
+            raw_code = "ERROR"
         
-        if raw_code == "ERROR_FETCHING":
-            return json.dumps({"status": "FAILED", "findings": "Could not fetch code from URL."})
+        if raw_code == "ERROR":
+            audit_data = {"url": repo_url, "status": "WARNING", "details": "Failed to fetch code from URL. Please ensure it is a raw text URL (e.g. raw.githubusercontent.com).", "timestamp": "auto"}
+            self.audits[repo_url] = json.dumps(audit_data)
+            return json.dumps(audit_data)
 
         prompt = f"""
-        You are a smart contract security auditor.
-        Review this code snippet:
+        You are a strict smart contract security auditor.
+        Review this code:
         {raw_code}
         
-        Rules:
-        1. You must start your response with EXACTLY ONE of these words: SECURE, WARNING, or CRITICAL.
-        2. Provide exactly two sentences explaining why.
+        Rule 1: Start your response with EXACTLY one word: SECURE, WARNING, or CRITICAL.
+        Rule 2: Follow it with exactly one sentence explaining the main risk.
         """
         
         def _analyze_security() -> str:
             return gl.nondet.exec_prompt(prompt)
             
-        # Simplified principle to guarantee consensus success during the demo
-        analysis_raw = gl.eq_principle.prompt_comparative(
-            _analyze_security,
-            principle="Both responses must be a security review of the provided code and start with SECURE, WARNING, or CRITICAL."
-        )
+        try:
+            analysis_raw = gl.eq_principle.prompt_comparative(
+                _analyze_security,
+                principle="Both texts must start with the exact same word (SECURE, WARNING, or CRITICAL)."
+            )
+        except Exception as e:
+            # If consensus fails or LLM times out, we catch it so the transaction DOES NOT REVERT!
+            analysis_raw = f"WARNING: AI Validators could not reach consensus or timed out. Please try again."
         
         status = "UNKNOWN"
-        # Check the first 20 characters to determine the status
         prefix = analysis_raw.upper()[:20]
         if "SECURE" in prefix:
             status = "SECURE"
